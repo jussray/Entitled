@@ -34,6 +34,7 @@ export function caseFromBase44(caseRow) {
   if (!caseRow?.id) throw new TypeError("Base44 case id is required");
   return {
     id: caseRow.id,
+    ownerId: caseRow.owner_id ?? null,
     facts: parseJson(caseRow.facts_json, `Case ${caseRow.id} facts_json`) ?? {},
   };
 }
@@ -65,6 +66,7 @@ export function determinationToBase44(outcome) {
   return {
     determination: {
       case_id: outcome.caseId,
+      owner_id: outcome.caseOwnerId,
       policy_id: outcome.policyId,
       policy_version: outcome.policyVersion,
       state: outcome.state,
@@ -79,6 +81,7 @@ export function determinationToBase44(outcome) {
     },
     receipt: {
       case_id: outcome.caseId,
+      owner_id: outcome.caseOwnerId,
       policy_id: outcome.policyId,
       policy_version: outcome.policyVersion,
       determination: outcome.state,

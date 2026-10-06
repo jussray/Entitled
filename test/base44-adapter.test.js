@@ -13,7 +13,7 @@ const requirementRows = [
   { id: "r1", policy_id: "p1", fact: "age", operator: "gte", expected_json: "18", proof_required: true, max_age_days: 30 },
   { id: "r2", policy_id: "p1", fact: "resident", operator: "equals", expected_json: "true", proof_required: true, max_age_days: 30 },
 ];
-const caseRow = { id: "c1", facts_json: JSON.stringify({ age: 29, resident: true }) };
+const caseRow = { id: "c1", owner_id: "user-123", facts_json: JSON.stringify({ age: 29, resident: true }) };
 const evidenceRows = [
   { id: "e1", case_id: "c1", fact: "age", value_json: "29", verification_class: "authoritative", observed_at: "2026-10-05T20:00:00Z" },
   { id: "e2", case_id: "c1", fact: "resident", value_json: "true", verification_class: "authoritative", observed_at: "2026-10-05T20:00:00Z" },
@@ -29,6 +29,8 @@ test("adapts Base44 rows into an eligible determination", () => {
   });
   assert.equal(out.state, "ELIGIBLE");
   const persisted = determinationToBase44(out);
+  assert.equal(persisted.determination.owner_id, "user-123");
+  assert.equal(persisted.receipt.owner_id, "user-123");
   assert.equal(persisted.determination.authorizing, false);
   assert.equal(persisted.receipt.official_decision, false);
   assert.equal(persisted.receipt.legal_conclusion, false);

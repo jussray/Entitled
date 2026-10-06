@@ -114,6 +114,7 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
   const policyId = required(policy?.id, "policy.id");
   const policyVersion = required(policy?.version, "policy.version");
   const caseId = required(caseRecord?.id, "caseRecord.id");
+  const caseOwnerId = caseRecord?.ownerId ?? null;
   const requirements = Array.isArray(policy?.requirements) ? policy.requirements : [];
   const facts = caseRecord?.facts ?? {};
   const gate = policyGate(policy, observedAt);
@@ -128,6 +129,7 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
       policyEffectiveFrom: policy.effectiveFrom ?? null,
       policyEffectiveTo: policy.effectiveTo ?? null,
       caseId,
+      caseOwnerId,
       observedAt,
       checks: [],
       missingEvidence: [],
@@ -146,6 +148,7 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
       policyEffectiveFrom: policy.effectiveFrom ?? null,
       policyEffectiveTo: policy.effectiveTo ?? null,
       caseId,
+      caseOwnerId,
       observedAt,
       checks: [],
       missingEvidence: [],
@@ -260,6 +263,7 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
     policyEffectiveFrom: policy.effectiveFrom ?? null,
     policyEffectiveTo: policy.effectiveTo ?? null,
     caseId,
+    caseOwnerId,
     observedAt,
     checks,
     missingEvidence,
@@ -276,6 +280,7 @@ function finalize(payload) {
     policyEffectiveFrom: payload.policyEffectiveFrom,
     policyEffectiveTo: payload.policyEffectiveTo,
     caseId: payload.caseId,
+    caseOwnerId: payload.caseOwnerId,
     state: payload.state,
     checks: payload.checks,
     missingEvidence: payload.missingEvidence,
@@ -291,6 +296,7 @@ function finalize(payload) {
       policyId: payload.policyId,
       policyVersion: payload.policyVersion,
       caseId: payload.caseId,
+      ownerId: payload.caseOwnerId,
       determination: payload.state,
       observedAt: payload.observedAt,
       authorizing: false,
