@@ -1,0 +1,26 @@
+{
+  "appId": "6a94a9bdf1ac72972e1d1470",
+  "product": "Entitled",
+  "publicRead": [
+    "Policy",
+    "Requirement"
+  ],
+  "adminOnlyRead": [
+    "CaseRecord",
+    "CaseEvidence",
+    "Determination",
+    "DeterminationReceipt"
+  ],
+  "deprecatedAdminOnly": [
+    "Claim",
+    "Evidence",
+    "AttackCard",
+    "ContinuityRecord",
+    "WorldRadarFinding",
+    "ReconciliationReceipt",
+    "ContinuityCookie",
+    "ReconciliationRun",
+    "ReconciliationRule"
+  ],
+  "invariant": "Personal case facts, evidence, determinations, and receipts must never be public-readable."
+}
