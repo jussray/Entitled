@@ -68,9 +68,14 @@ function policyGate(policy, observedAt) {
 function usableWitnesses(witnesses, requirement, observedAt) {
   const observed = parseTime(observedAt, "observedAt");
   const maxAgeDays = requirement?.maxEvidenceAgeDays;
-  const maxAgeMs = Number.isFinite(Number(maxAgeDays)) && Number(maxAgeDays) >= 0
-    ? Number(maxAgeDays) * DAY_MS
-    : null;
+  let maxAgeMs = null;
+  if (maxAgeDays !== undefined && maxAgeDays !== null && maxAgeDays !== "") {
+    const parsedMaxAgeDays = Number(maxAgeDays);
+    if (!Number.isFinite(parsedMaxAgeDays) || parsedMaxAgeDays < 0) {
+      throw new TypeError(`Requirement ${requirement?.id ?? requirement?.fact ?? "unknown"} maxEvidenceAgeDays must be a non-negative number`);
+    }
+    maxAgeMs = parsedMaxAgeDays * DAY_MS;
+  }
 
   const usable = [];
   const rejected = [];

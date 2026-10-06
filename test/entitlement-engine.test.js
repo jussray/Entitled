@@ -108,3 +108,35 @@ test("future-dated evidence is not accepted as current proof", () => {
   assert.equal(out.state, "NEEDS_EVIDENCE");
   assert.ok(out.missingEvidence.every((item) => item.reason.includes("future_timestamp")));
 });
+
+
+test("unset evidence age does not collapse to zero-day expiry", () => {
+  const policyWithoutAgeLimit = {
+    ...policy,
+    requirements: policy.requirements.map(({ maxEvidenceAgeDays, ...requirement }) => requirement),
+  };
+  const olderEvidence = evidence.map((item) => ({ ...item, observedAt: "2026-09-01T00:00:00Z" }));
+  const out = evaluateEntitlement({
+    policy: policyWithoutAgeLimit,
+    caseRecord: { id: "case-9", facts: { age: 29, resident: true } },
+    evidence: olderEvidence,
+    observedAt,
+  });
+  assert.equal(out.state, "ELIGIBLE");
+});
+
+test("invalid negative evidence age is rejected instead of silently disabling freshness", () => {
+  const invalidPolicy = {
+    ...policy,
+    requirements: [{ ...policy.requirements[0], maxEvidenceAgeDays: -1 }, policy.requirements[1]],
+  };
+  assert.throws(
+    () => evaluateEntitlement({
+      policy: invalidPolicy,
+      caseRecord: { id: "case-10", facts: { age: 29, resident: true } },
+      evidence,
+      observedAt,
+    }),
+    /non-negative number/
+  );
+});
