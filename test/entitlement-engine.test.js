@@ -140,3 +140,16 @@ test("invalid negative evidence age is rejected instead of silently disabling fr
     /non-negative number/
   );
 });
+
+
+test("malformed authoritative evidence timestamp is rejected without crashing the case", () => {
+  const malformed = evidence.map((item) => ({ ...item, observedAt: "not-a-date" }));
+  const out = evaluateEntitlement({
+    policy,
+    caseRecord: { id: "case-11", facts: { age: 29, resident: true } },
+    evidence: malformed,
+    observedAt,
+  });
+  assert.equal(out.state, "NEEDS_EVIDENCE");
+  assert.ok(out.missingEvidence.every((item) => item.reason.includes("invalid_timestamp")));
+});

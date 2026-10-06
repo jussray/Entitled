@@ -37,13 +37,20 @@ function compare(actual, operator, expected) {
   }
 }
 
+function evidenceTimestamp(witness) {
+  const value = witness?.asOf ?? witness?.observedAt;
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 function authoritativeEvidenceFor(evidence, fact) {
   return (evidence ?? [])
     .filter((item) => item?.fact === fact && item?.verificationClass === "authoritative")
     .sort((a, b) => {
-      const aTime = parseTime(a.asOf ?? a.observedAt, `Evidence ${a.id ?? fact} timestamp`) ?? -Infinity;
-      const bTime = parseTime(b.asOf ?? b.observedAt, `Evidence ${b.id ?? fact} timestamp`) ?? -Infinity;
-      return bTime - aTime;
+      const aTime = evidenceTimestamp(a);
+      const bTime = evidenceTimestamp(b);
+      return (Number.isFinite(bTime) ? bTime : -Infinity) - (Number.isFinite(aTime) ? aTime : -Infinity);
     });
 }
 
@@ -81,12 +88,13 @@ function usableWitnesses(witnesses, requirement, observedAt) {
   const rejected = [];
 
   for (const witness of witnesses) {
-    const witnessTime = parseTime(
-      witness.asOf ?? witness.observedAt,
-      `Evidence ${witness.id ?? requirement.fact} timestamp`
-    );
+    const witnessTime = evidenceTimestamp(witness);
     if (witnessTime === null) {
       rejected.push({ id:witness.id, reason:"missing_timestamp" });
+      continue;
+    }
+    if (!Number.isFinite(witnessTime)) {
+      rejected.push({ id:witness.id, reason:"invalid_timestamp" });
       continue;
     }
     if (witnessTime > observed) {
