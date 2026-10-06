@@ -1,0 +1,11 @@
+{
+  "product": "Entitled",
+  "formerPrototypeName": "Living Truth (Copy)",
+  "appId": "6a94a9bdf1ac72972e1d1470",
+  "role": "evidence-bound eligibility and entitlement determination product",
+  "repository": "jussray/Entitled",
+  "authority": "decision support only; receipts are non-authorizing",
+  "relatedProducts": {
+    "LivingTruth": "jussray/Living-Truth"
+  }
+}
