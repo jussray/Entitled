@@ -8,6 +8,8 @@ export const DETERMINATION_STATES = Object.freeze({
   UNKNOWN: "UNKNOWN",
 });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function hash(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -15,6 +17,13 @@ function hash(value) {
 function required(value, name) {
   if (typeof value !== "string" || !value.trim()) throw new TypeError(`${name} is required`);
   return value.trim();
+}
+
+function parseTime(value, label) {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new TypeError(`${label} must be a valid date-time`);
+  return parsed;
 }
 
 function compare(actual, operator, expected) {
@@ -31,7 +40,61 @@ function compare(actual, operator, expected) {
 function authoritativeEvidenceFor(evidence, fact) {
   return (evidence ?? [])
     .filter((item) => item?.fact === fact && item?.verificationClass === "authoritative")
-    .sort((a, b) => Date.parse(b.asOf ?? b.observedAt ?? 0) - Date.parse(a.asOf ?? a.observedAt ?? 0));
+    .sort((a, b) => {
+      const aTime = parseTime(a.asOf ?? a.observedAt, `Evidence ${a.id ?? fact} timestamp`) ?? -Infinity;
+      const bTime = parseTime(b.asOf ?? b.observedAt, `Evidence ${b.id ?? fact} timestamp`) ?? -Infinity;
+      return bTime - aTime;
+    });
+}
+
+function policyGate(policy, observedAt) {
+  const observed = parseTime(observedAt, "observedAt");
+  const status = required(policy?.status, "policy.status");
+  const effectiveFrom = parseTime(policy?.effectiveFrom, "policy.effectiveFrom");
+  const effectiveTo = parseTime(policy?.effectiveTo, "policy.effectiveTo");
+
+  if (status !== "ACTIVE") {
+    return { ok:false, status, effectiveFrom, effectiveTo, reason:`Policy status is ${status}, not ACTIVE.` };
+  }
+  if (effectiveFrom !== null && observed < effectiveFrom) {
+    return { ok:false, status, effectiveFrom, effectiveTo, reason:"Policy is not effective yet." };
+  }
+  if (effectiveTo !== null && observed > effectiveTo) {
+    return { ok:false, status, effectiveFrom, effectiveTo, reason:"Policy is no longer effective." };
+  }
+  return { ok:true, status, effectiveFrom, effectiveTo };
+}
+
+function usableWitnesses(witnesses, requirement, observedAt) {
+  const observed = parseTime(observedAt, "observedAt");
+  const maxAgeDays = requirement?.maxEvidenceAgeDays;
+  const maxAgeMs = Number.isFinite(Number(maxAgeDays)) && Number(maxAgeDays) >= 0
+    ? Number(maxAgeDays) * DAY_MS
+    : null;
+
+  const usable = [];
+  const rejected = [];
+
+  for (const witness of witnesses) {
+    const witnessTime = parseTime(
+      witness.asOf ?? witness.observedAt,
+      `Evidence ${witness.id ?? requirement.fact} timestamp`
+    );
+    if (witnessTime === null) {
+      rejected.push({ id:witness.id, reason:"missing_timestamp" });
+      continue;
+    }
+    if (witnessTime > observed) {
+      rejected.push({ id:witness.id, reason:"future_timestamp" });
+      continue;
+    }
+    if (maxAgeMs !== null && observed - witnessTime > maxAgeMs) {
+      rejected.push({ id:witness.id, reason:"stale" });
+      continue;
+    }
+    usable.push(witness);
+  }
+  return { usable, rejected };
 }
 
 export function evaluateEntitlement({ policy, caseRecord, evidence = [], observedAt = new Date().toISOString() }) {
@@ -40,6 +103,25 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
   const caseId = required(caseRecord?.id, "caseRecord.id");
   const requirements = Array.isArray(policy?.requirements) ? policy.requirements : [];
   const facts = caseRecord?.facts ?? {};
+  const gate = policyGate(policy, observedAt);
+
+  if (!gate.ok) {
+    return finalize({
+      state: DETERMINATION_STATES.UNKNOWN,
+      reason: gate.reason,
+      policyId,
+      policyVersion,
+      policyStatus: gate.status,
+      policyEffectiveFrom: policy.effectiveFrom ?? null,
+      policyEffectiveTo: policy.effectiveTo ?? null,
+      caseId,
+      observedAt,
+      checks: [],
+      missingEvidence: [],
+      conflicts: [],
+      nextActions: ["Load an ACTIVE policy version that is effective for the determination time."],
+    });
+  }
 
   if (requirements.length === 0) {
     return finalize({
@@ -47,6 +129,9 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
       reason: "The ruleset has no requirements to evaluate.",
       policyId,
       policyVersion,
+      policyStatus: gate.status,
+      policyEffectiveFrom: policy.effectiveFrom ?? null,
+      policyEffectiveTo: policy.effectiveTo ?? null,
       caseId,
       observedAt,
       checks: [],
@@ -66,8 +151,15 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
     const fact = required(requirement?.fact, "requirement.fact");
     const proofRequired = requirement.proofRequired !== false;
     const actual = facts[fact];
-    const witnesses = authoritativeEvidenceFor(evidence, fact);
+    const authoritative = authoritativeEvidenceFor(evidence, fact);
+    const { usable: witnesses, rejected } = usableWitnesses(authoritative, requirement, observedAt);
     const distinctWitnessValues = [...new Set(witnesses.map((item) => JSON.stringify(item.value)))];
+
+    if (actual === undefined || actual === null || actual === "") {
+      missingEvidence.push({ requirementId, fact, reason: "Case fact is missing." });
+      checks.push({ requirementId, fact, status: "MISSING", actual: null });
+      continue;
+    }
 
     if (distinctWitnessValues.length > 1) {
       conflicts.push({
@@ -80,15 +172,22 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
       continue;
     }
 
-    if (actual === undefined || actual === null || actual === "") {
-      missingEvidence.push({ requirementId, fact, reason: "Case fact is missing." });
-      checks.push({ requirementId, fact, status: "MISSING", actual: null });
-      continue;
-    }
-
     if (proofRequired && witnesses.length === 0) {
-      missingEvidence.push({ requirementId, fact, reason: "Authoritative evidence is required." });
-      checks.push({ requirementId, fact, status: "UNPROVEN", actual });
+      const rejectedReasons = [...new Set(rejected.map((item) => item.reason))];
+      missingEvidence.push({
+        requirementId,
+        fact,
+        reason: authoritative.length === 0
+          ? "Authoritative evidence is required."
+          : `No current usable authoritative evidence remains: ${rejectedReasons.join(", ")}.`,
+      });
+      checks.push({
+        requirementId,
+        fact,
+        status: authoritative.length === 0 ? "UNPROVEN" : "STALE_OR_INVALID",
+        actual,
+        rejectedWitnessIds: rejected.map((item) => item.id).filter(Boolean),
+      });
       continue;
     }
 
@@ -123,19 +222,19 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
 
   if (conflicts.length > 0) {
     state = DETERMINATION_STATES.CONFLICT;
-    reason = "Conflicting case facts or authoritative evidence prevent a reliable determination.";
+    reason = "Conflicting case facts or current authoritative evidence prevent a reliable determination.";
     nextActions = ["Resolve the listed evidence conflicts before relying on the determination."];
   } else if (missingEvidence.length > 0) {
     state = DETERMINATION_STATES.NEEDS_EVIDENCE;
-    reason = "One or more required facts or proofs are missing.";
-    nextActions = missingEvidence.map((item) => `Obtain evidence for ${item.fact}.`);
+    reason = "One or more required facts or current proofs are missing.";
+    nextActions = missingEvidence.map((item) => `Obtain current evidence for ${item.fact}.`);
   } else if (hasFailure) {
     state = DETERMINATION_STATES.INELIGIBLE;
     reason = "At least one loaded requirement is not satisfied by the current case evidence.";
     nextActions = ["Review the failed requirements and confirm the applicable ruleset and evidence are current."];
   } else {
     state = DETERMINATION_STATES.ELIGIBLE;
-    reason = "All loaded requirements are satisfied by the current case facts and required evidence.";
+    reason = "All loaded requirements are satisfied by current case facts and required evidence.";
     nextActions = ["Present the evidence-bound determination for the appropriate human or official review step."];
   }
 
@@ -144,6 +243,9 @@ export function evaluateEntitlement({ policy, caseRecord, evidence = [], observe
     reason,
     policyId,
     policyVersion,
+    policyStatus: gate.status,
+    policyEffectiveFrom: policy.effectiveFrom ?? null,
+    policyEffectiveTo: policy.effectiveTo ?? null,
     caseId,
     observedAt,
     checks,
@@ -157,6 +259,9 @@ function finalize(payload) {
   const fingerprint = hash({
     policyId: payload.policyId,
     policyVersion: payload.policyVersion,
+    policyStatus: payload.policyStatus,
+    policyEffectiveFrom: payload.policyEffectiveFrom,
+    policyEffectiveTo: payload.policyEffectiveTo,
     caseId: payload.caseId,
     state: payload.state,
     checks: payload.checks,

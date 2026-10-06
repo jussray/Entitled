@@ -14,6 +14,9 @@ export function policyFromBase44(policyRow, requirementRows = []) {
   return {
     id: policyRow.id,
     version: policyRow.version,
+    status: policyRow.status,
+    effectiveFrom: policyRow.effective_from ?? null,
+    effectiveTo: policyRow.effective_to ?? null,
     requirements: requirementRows
       .filter((row) => row?.policy_id === policyRow.id)
       .map((row) => ({
@@ -22,6 +25,7 @@ export function policyFromBase44(policyRow, requirementRows = []) {
         operator: row.operator ?? "equals",
         expected: parseJson(row.expected_json, `Requirement ${row.id ?? row.requirement_key} expected_json`),
         proofRequired: row.proof_required !== false,
+        maxEvidenceAgeDays: row.max_age_days ?? null,
       })),
   };
 }
