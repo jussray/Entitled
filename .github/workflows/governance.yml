@@ -1,0 +1,24 @@
+name: Governance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  main-protection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify main branch protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.protected')"
+          if [ "$protected" != "true" ]; then
+            echo "::error::main is unprotected. Exact-head CI can be bypassed until branch protection or a repository ruleset is enabled."
+            exit 1
+          fi
+          echo "main branch protection is enabled."
